@@ -1,0 +1,47 @@
+#for des
+#convert any asci into hex then into bin and vice versa
+
+
+r = "Hello".encode().hex() # -> 48656c6c6f
+
+key_bytes = bytes.fromhex(r)
+
+bits_128 = ''.join(format(byte, '08b') for byte in key_bytes)
+
+
+def binToHexa(n):
+  
+    # convert binary to int
+    num = int(n, 2)
+    
+    # convert int to hexadecimal
+    hex_num = hex(num)
+    return(hex_num)
+
+
+l = bytes.fromhex(binToHexa(bits_128)[2:]).decode('ascii')
+
+print(l)
+
+
+
+######feistel network logic using simple example
+ar = []
+
+ar.append(0)
+ar.append(1)
+
+for i in range(0,5):
+    if i==0:
+        lf = ar[i]
+        lr = ar[i+1]
+    else:
+        lf = ar[i+i]
+        lr = ar[i+i+1]
+    r  = lr*2
+    l = lr
+    r = r
+    ar.append(l)
+    ar.append(r)
+
+print(ar)
