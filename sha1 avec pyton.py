@@ -1,6 +1,8 @@
 import struct
+import sys
+import os
 
-# these are the starting numbers for sha1 - dont change them
+
 H0 = 0x67452301
 H1 = 0xEFCDAB89
 H2 = 0x98BADCFE
@@ -8,165 +10,107 @@ H3 = 0x10325476
 H4 = 0xC3D2E1F0
 
 
-# this just moves bits around in a 32 bit number
 def rotate_left(num, how_many):
-    num = num & 0xffffffff  # make sure its 32 bits
-    result = ((num << how_many) | (num >> (32 - how_many)))
-    result = result & 0xffffffff  # trim back to 32 bits again
-    return result
+    num = num & 0xffffffff
+    return ((num << how_many) | (num >> (32 - how_many))) & 0xffffffff
 
 
-# takes a 64 byte block and mixes it with the current hash values
 def process_block(block, h0, h1, h2, h3, h4):
-    # block must always be 64 bytes
-    if len(block) != 64:
-        print("ERROR: block is wrong size!")
-        return
-
-    # split block into 16 chunks of 4 bytes each
     words = []
     for i in range(16):
-        piece = block[i * 4 : i * 4 + 4]
-        num = struct.unpack('>I', piece)[0]  # big endian unsigned int
-        words.append(num)
-
-    # extend to 80 words total
+        words.append(struct.unpack('>I', block[i*4:i*4+4])[0])
     for i in range(16, 80):
-        mixed = words[i-3] ^ words[i-8] ^ words[i-14] ^ words[i-16]
-        words.append(rotate_left(mixed, 1))
+        words.append(rotate_left(words[i-3] ^ words[i-8] ^ words[i-14] ^ words[i-16], 1))
 
-    # copy the hash values so we can work with them
-    a = h0
-    b = h1
-    c = h2
-    d = h3
-    e = h4
+    a, b, c, d, e = h0, h1, h2, h3, h4
 
-    # main loop - 80 rounds
     for i in range(80):
-
-        # pick f and k based on which round we are in
         if i <= 19:
-            f = d ^ (b & (c ^ d))
-            k = 0x5A827999
+            f = d ^ (b & (c ^ d)); k = 0x5A827999
         elif i <= 39:
-            f = b ^ c ^ d
-            k = 0x6ED9EBA1
+            f = b ^ c ^ d;         k = 0x6ED9EBA1
         elif i <= 59:
-            f = (b & c) | (b & d) | (c & d)
-            k = 0x8F1BBCDC
+            f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC
         else:
-            f = b ^ c ^ d
-            k = 0xCA62C1D6
+            f = b ^ c ^ d;         k = 0xCA62C1D6
 
-        # calc new a value
         new_a = (rotate_left(a, 5) + f + e + k + words[i]) & 0xffffffff
+        a, b, c, d, e = new_a, a, rotate_left(b, 30), c, d
 
-        # shift everything along
-        e = d
-        d = c
-        c = rotate_left(b, 30)
-        b = a
-        a = new_a
-
-    # add this block result back into the running totals
-    h0 = (h0 + a) & 0xffffffff
-    h1 = (h1 + b) & 0xffffffff
-    h2 = (h2 + c) & 0xffffffff
-    h3 = (h3 + d) & 0xffffffff
-    h4 = (h4 + e) & 0xffffffff
-
-    return h0, h1, h2, h3, h4
+    return (h0+a)&0xffffffff, (h1+b)&0xffffffff, (h2+c)&0xffffffff, (h3+d)&0xffffffff, (h4+e)&0xffffffff
 
 
 def sha1(data):
-    # make sure data is bytes
-    if type(data) == str:
+    if isinstance(data, str):
         data = data.encode('utf-8')
 
-    # set up the starting hash values
-    h0 = H0
-    h1 = H1
-    h2 = H2
-    h3 = H3
-    h4 = H4
-
-    # remember how long the original message was (in bytes)
+    h0, h1, h2, h3, h4 = H0, H1, H2, H3, H4
     original_length = len(data)
 
-    # --- padding the message ---
-    # we need to pad the data so its length is a multiple of 64 bytes
-
-    # step 1: add a 1 bit (0x80 byte)
-    data = data + b'\x80'
-
-    # step 2: add zero bytes until length is 56 mod 64
+    data += b'\x80'
     while len(data) % 64 != 56:
-        data = data + b'\x00'
+        data += b'\x00'
+    data += struct.pack('>Q', original_length * 8)
 
-    # step 3: add original length in bits as 8 bytes at the end
-    bit_length = original_length * 8
-    data = data + struct.pack('>Q', bit_length)  # big endian 64bit number
+    for i in range(len(data) // 64):
+        h0, h1, h2, h3, h4 = process_block(data[i*64:i*64+64], h0, h1, h2, h3, h4)
 
-    # now process the data 64 bytes at a time
-    total_blocks = len(data) // 64
-
-    for block_num in range(total_blocks):
-        start = block_num * 64
-        end = start + 64
-        block = data[start:end]
-        h0, h1, h2, h3, h4 = process_block(block, h0, h1, h2, h3, h4)
-
-    # turn the 5 hash values into a hex string
-    final_hash = '%08x%08x%08x%08x%08x' % (h0, h1, h2, h3, h4)
-    return final_hash
+    return '%08x%08x%08x%08x%08x' % (h0, h1, h2, h3, h4)
 
 
-# ---- tests ----
+# ── CLI ──────────────────────────────────────────────────────────────────────
+
+def print_help():
+    print("""
+sha1 hasher - simple command line tool
+
+Usage:
+  python my_sha1.py string "your text here"
+  python my_sha1.py file   path/to/file.txt
+  python my_sha1.py help
+
+Examples:
+  python my_sha1.py string "hello world"
+  python my_sha1.py string "password123"
+  python my_sha1.py file   notes.txt
+  python my_sha1.py file   photo.jpg
+""")
+
 
 if __name__ == '__main__':
-    import hashlib
 
-    print("Running SHA-1 tests...\n")
+    # no arguments given
+    if len(sys.argv) < 2:
+        print_help()
+        sys.exit()
 
-    all_passed = True
+    command = sys.argv[1].lower()
 
-    def test(description, input_data):
-        global all_passed
-        # get our result
-        my_result = sha1(input_data)
-        # get python's built in sha1 result to compare
-        real_result = hashlib.sha1(input_data if type(input_data) == bytes else input_data.encode()).hexdigest()
+    if command == 'help':
+        print_help()
 
-        if my_result == real_result:
-            print(f"  PASS  [{description}]")
-            print(f"        hash: {my_result}\n")
+    elif command == 'string':
+        if len(sys.argv) < 3:
+            print("Error: please provide a string to hash.")
+            print('Example: python my_sha1.py string "hello world"')
         else:
-            print(f"  FAIL  [{description}]")
-            print(f"        got:      {my_result}")
-            print(f"        expected: {real_result}\n")
-            all_passed = False
+            text = sys.argv[2]
+            print(f"Input : {text}")
+            print(f"SHA-1 : {sha1(text)}")
 
-    # basic tests
-    test("empty string",        "")
-    test("hello world",         "hello world")
-    test("abc",                 "abc")
-    test("single letter a",     "a")
-    test("numbers",             "1234567890")
+    elif command == 'file':
+        if len(sys.argv) < 3:
+            print("Error: please provide a file path.")
+            print("Example: python my_sha1.py file notes.txt")
+        else:
+            path = sys.argv[2]
+            if not os.path.isfile(path):
+                print(f"Error: could not find file '{path}'")
+            else:
+                with open(path, 'rb') as f:
+                    data = f.read()
+                print(f"File  : {path}")
+                print(f"SHA-1 : {sha1(data)}")
 
-    # test with bytes directly
-    test("bytes input",         b"hello bytes")
-
-    # longer input (more than 64 bytes so multiple blocks get processed)
-    long_msg = "this is a longer message that should span more than one block when we hash it with sha1 algorithm"
-    test("long message",        long_msg)
-
-    # classic sha1 test vector from the spec
-    test("SHA1 spec vector",    "abc")
-    test("SHA1 spec vector 2",  "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
-
-    print("--------------------")
-    if all_passed:
-        print("All tests passed!")
     else:
-        print("Some tests FAILED - check above.")
+        print(f"Unknown command '{command}'. Try: python my_sha1.py help")
