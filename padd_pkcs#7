@@ -1,0 +1,28 @@
+#first version
+
+msg = input("enter a msg to pad:")
+
+i=0
+j=16
+msgs= []
+def pad(msg):
+    global i,j ,msgs
+    needed_padding = abs(16-len(msg))
+    if len(msg)==16:
+        msgs.append(msg)
+        msgs.append("0x10"*16)
+        print("lower was called")
+    if len(msg)<16:
+        msgs.append(msg+"".join(b for b in f"{hex(needed_padding)}"*needed_padding))
+        print("lower was called")
+    if len(msg)>16:
+            print("greater was called")
+            msgs.append(msg[i:j])
+            i+=16
+            j+=16
+            pad(msg[i:j])
+    return msgs
+            
+print(pad(msg))
+         
+            
